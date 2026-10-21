@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Starlark and Bazel</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .card.hot p { color: var(--accent-surface-foreground); opacity: .85; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .arrow { color: var(--muted-foreground); }
+  svg { display: block; width: 100%; height: 300px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg text.small { font-size: 11px; fill: var(--muted-foreground); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  svg .lane { fill: none; stroke: var(--border); stroke-dasharray: 4 4; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  code { font-family: var(--font-mono, monospace); font-size: 12px; background: var(--code-background); color: var(--code-foreground); padding: 1px 5px; border-radius: 4px; }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section>
+    <h2>01 <b>What it is</b></h2>
+    <p><strong>Starlark</strong> (formerly Skylark) is a small configuration language with Python 3 syntax, designed at Google to describe builds. <strong>Bazel</strong> is the open-source flavour of Google's internal build tool Blaze; every <code>BUILD</code> file and every <code>.bzl</code> extension in Bazel is Starlark.</p>
+  </section>
+
+  <section>
+    <h2>02 <b>The usual way vs this</b></h2>
+    <div class="grid">
+      <div class="card"><h3>Usual way: a real scripting language</h3><p>Build files are Python, Groovy or shell. Anything goes: read the clock, hit the network, mutate globals, loop forever. The build tool cannot prove two runs are equal, cannot evaluate files in parallel, and cannot parse the file without running it.</p></div>
+      <div class="card hot"><h3>Starlark: Python minus the dangerous parts</h3><p>No I/O, no clock, no <code>while</code>, no recursion, no classes, no exceptions, no mutable globals after load. Same input, same output, every time. Files load in parallel and freeze, so the build tool can cache them and tools can rewrite them.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>How a Bazel build flows</b></h2>
+    <div class="flow">
+      <span class="step">load <code>.bzl</code> + <code>BUILD</code> (Starlark runs, macros expand)</span><span class="arrow">&rarr;</span>
+      <span class="step hot">analysis: rule implementations emit actions</span><span class="arrow">&rarr;</span>
+      <span class="step">execution: run actions in sandboxes, hit caches</span>
+    </div>
+    <p class="note">Starlark only ever runs in the first two phases. It describes the graph; it never compiles anything itself.</p>
+  </section>
+
+  <section>
+    <h2>04 <b>Diagram</b></h2>
+    <svg viewBox="0 0 700 300" role="img" aria-label="Starlark files feed Bazel's loading and analysis phases, producing an action graph that the execution phase runs with sandboxing and caching.">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+
+      <text x="20" y="22" class="small">Starlark territory (deterministic, hermetic, parallel)</text>
+      <rect class="lane" x="10" y="30" width="430" height="200" rx="10"/>
+
+      <rect class="box" x="30" y="50" width="130" height="50" rx="8"/>
+      <text x="95" y="72" text-anchor="middle">.bzl files</text>
+      <text x="95" y="88" text-anchor="middle" class="small">rules, macros</text>
+
+      <rect class="box" x="30" y="160" width="130" height="50" rx="8"/>
+      <text x="95" y="182" text-anchor="middle">BUILD files</text>
+      <text x="95" y="198" text-anchor="middle" class="small">rule calls = targets</text>
+
+      <path class="line" d="M95 100 V160" marker-end="url(#a)"/>
+      <text x="103" y="134" class="small">load()</text>
+
+      <path class="line" d="M160 185 H250" marker-end="url(#a)"/>
+      <rect class="hot" x="250" y="150" width="170" height="70" rx="8"/>
+      <text x="335" y="175" text-anchor="middle">analysis phase</text>
+      <text x="335" y="192" text-anchor="middle" class="small">rule impl → providers</text>
+      <text x="335" y="207" text-anchor="middle" class="small">declares outputs + actions</text>
+
+      <path class="line" d="M420 185 H520" marker-end="url(#a)"/>
+      <rect class="box" x="520" y="150" width="160" height="70" rx="8"/>
+      <text x="600" y="175" text-anchor="middle">action graph</text>
+      <text x="600" y="192" text-anchor="middle" class="small">inputs → cmd → outputs</text>
+      <text x="600" y="207" text-anchor="middle" class="small">keyed by content hash</text>
+
+      <path class="line" d="M600 220 V260" marker-end="url(#a)"/>
+      <rect class="box" x="460" y="260" width="220" height="34" rx="8"/>
+      <text x="570" y="282" text-anchor="middle">execution: sandbox + local/remote cache</text>
+
+      <text x="470" y="22" class="small">Bazel core (Java)</text>
+      <rect class="lane" x="450" y="30" width="240" height="110" rx="10"/>
+      <text x="570" y="60" text-anchor="middle" class="small">tracks every input file</text>
+      <text x="570" y="78" text-anchor="middle" class="small">reruns only what changed</text>
+      <text x="570" y="96" text-anchor="middle" class="small">parallel locally or on a build farm</text>
+      <text x="570" y="114" text-anchor="middle" class="small">same source → same binary</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2>05 <b>When to use it</b></h2>
+    <table>
+      <tr><th>Use it when</th><th>Skip it when</th></tr>
+      <tr><td>Large codebase, several compiled languages, many platforms, lots of tests: the cases Bazel's FAQ names.</td><td>A small single-language project where the native tool (cargo, go, npm) already gives you reproducible builds.</td></tr>
+      <tr><td>You need a config language that users can extend but that can never do I/O or hang: Buck2, Copybara, Tilt, Drone, lucicfg all picked Starlark for this.</td><td>The script needs the network, the clock, or heavy computation. Starlark's own design doc says CPU-heavy work belongs in another language.</td></tr>
+      <tr><td>You want tools to parse and rewrite the config files, not just run them.</td><td>Build steps whose outputs must not be cached, or a few long sequential steps that cannot be split.</td></tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note.</p>
+</div>
+</body>
+</html>
