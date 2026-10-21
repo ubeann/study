@@ -1,0 +1,13 @@
+name: check notes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate note frontmatter
+        run: python3 scripts/check_notes.py
