@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon-512.png" alt="study mascot: a pink axolotl reading a book" width="160"></p>
+
 # study
 
 My second brain for things I learn while building with AI tooling: version control, AI dev workflows, databases, and the tools around them.
@@ -12,7 +14,7 @@ notes/INDEX.md            generated table of every note
 diagrams/<slug>.html      diagram page for a note, built from diagrams/_template.html
 templates/                concept, comparison, article, lookup
 scripts/check_notes.py    validates note frontmatter, rebuilds the index
-assets/                   logo and icons
+assets/                   mascot: icon.svg, icon-512.png, favicon.ico
 .claude/skills/learn/     the /learn skill that writes notes
 AGENTS.md                 pointers for any coding agent working here
 ```
