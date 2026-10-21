@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CLIProxyAPI vs T3 Code</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .arrow { color: var(--muted-foreground); }
+  svg { display: block; width: 100%; height: 240px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+
+  <section>
+    <h2>01 <b>What it is</b></h2>
+    <p>CLIProxyAPI is a Go proxy that exposes CLI OAuth logins (Claude, Codex, Gemini, Grok, Kimi, Meta, Devin) as OpenAI, Gemini, Claude and Codex-compatible HTTP APIs, round-robin across accounts. T3 Code drives the official agent CLIs, each with its own vendor login. They sit on different layers: one is a model gateway, the other an agent control surface.</p>
+  </section>
+
+  <section>
+    <h2>02 <b>The usual way vs this</b></h2>
+    <div class="grid">
+      <div class="card"><h3>T3 Code path</h3><p>You, then T3 Code, then the official Claude Code or Codex CLI, then the provider. Each CLI logs in itself, so the subscription is used the way the vendor intends.</p></div>
+      <div class="card hot"><h3>CLIProxyAPI path</h3><p>Any tool, then the proxy on port 8317, then the provider, reusing a stored CLI token outside that CLI. Anthropic's policy forbids routing requests through Free, Pro or Max credentials outside its native apps.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>How it flows</b></h2>
+    <div class="flow">
+      <span class="step">--claude-login / --codex-login once</span><span class="arrow">&rarr;</span>
+      <span class="step">tokens in ~/.cli-proxy-api</span><span class="arrow">&rarr;</span>
+      <span class="step">client sends OpenAI/Gemini/Claude-format request</span><span class="arrow">&rarr;</span>
+      <span class="step hot">proxy translates, picks a credential (round-robin)</span><span class="arrow">&rarr;</span>
+      <span class="step">provider, billed to that account</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>04 <b>Diagram</b></h2>
+    <svg viewBox="0 0 700 240" role="img" aria-label="A four-layer stack from control surface to model provider, with T3 Code at the top and CLIProxyAPI in the gateway layer.">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+      <text x="20" y="34">control surface</text>
+      <rect class="box" x="160" y="14" width="200" height="34" rx="8"/><text x="260" y="36" text-anchor="middle">T3 Code</text>
+      <text x="20" y="90">agent harness</text>
+      <rect class="box" x="160" y="70" width="110" height="34" rx="8"/><text x="215" y="92" text-anchor="middle">Claude Code</text>
+      <rect class="box" x="280" y="70" width="110" height="34" rx="8"/><text x="335" y="92" text-anchor="middle">Codex CLI</text>
+      <rect class="box" x="400" y="70" width="110" height="34" rx="8"/><text x="455" y="92" text-anchor="middle">OpenCode, Cursor</text>
+      <rect class="box" x="520" y="70" width="160" height="34" rx="8"/><text x="600" y="92" text-anchor="middle">scripts, IDE plugins</text>
+      <text x="20" y="146">model access</text>
+      <rect class="box" x="160" y="126" width="230" height="34" rx="8"/><text x="275" y="148" text-anchor="middle">direct official login</text>
+      <rect class="hot" x="400" y="126" width="280" height="34" rx="8"/><text x="540" y="148" text-anchor="middle">CLIProxyAPI :8317, round-robin tokens</text>
+      <text x="20" y="202">model provider</text>
+      <rect class="box" x="160" y="182" width="520" height="34" rx="8"/><text x="420" y="204" text-anchor="middle">Anthropic, OpenAI, Google, xAI, Kimi, Meta, Devin</text>
+      <path class="line" d="M260 48 V70" marker-end="url(#a)"/>
+      <path class="line" d="M215 104 V126" marker-end="url(#a)"/>
+      <path class="line" d="M335 104 V126" marker-end="url(#a)"/>
+      <path class="line" d="M600 104 V126" marker-end="url(#a)"/>
+      <path class="line" d="M275 160 V182" marker-end="url(#a)"/>
+      <path class="line" d="M540 160 V182" marker-end="url(#a)"/>
+      <text x="40" y="232">T3 Code stays on the left path; the proxy is the right path and inherits each vendor's terms.</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2>05 <b>When to use it</b></h2>
+    <table>
+      <tr><th>CLIProxyAPI when</th><th>T3 Code when</th></tr>
+      <tr><td>A script, n8n flow or IDE plugin needs an API endpoint, not an agent</td><td>Day-to-day agent work across providers and accounts</td></tr>
+      <tr><td>You need a provider T3 Code does not drive (Kimi, Meta Muse, Devin, Vertex)</td><td>You want threads, projects, phone access and MCP without a gray zone</td></tr>
+      <tr><td>The provider's terms allow token reuse; bind to 127.0.0.1 and set api-keys</td><td>You want to keep a paid Claude account out of a ban</td></tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note. The enforcement timeline for Anthropic's restriction is unverified and not drawn here.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI workflow tools landscape</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .arrow { color: var(--muted-foreground); }
+  svg { display: block; width: 100%; height: 240px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section>
+    <h2>01 <b>What it is</b></h2>
+    <p>Eight tools and conventions, each at a fixed point in one AI coding loop: context, plan, build in parallel, package, verify, land. AI made writing code cheap, so review and landing became the slow part; most of these exist to unblock it.</p>
+  </section>
+
+  <section>
+    <h2>02 <b>The usual way vs this</b></h2>
+    <div class="grid">
+      <div class="card"><h3>Usual way</h3><p>One developer, one branch, one large PR, one human reviewer, all in series. Every instruction is retyped into each chat. The reviewer is the bottleneck as soon as agents start producing code.</p></div>
+      <div class="card hot"><h3>Agent loop</h3><p>Context lives in the repo (AGENTS.md, skills, MCP). Several agents build in separate worktrees, hand back small stacked PRs, a bot does the first review pass, and a merge queue lands the stack as one group.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>How it flows</b></h2>
+    <div class="flow">
+      <span class="step">01 context: AGENTS.md, skills, MCP</span><span class="arrow">&rarr;</span>
+      <span class="step">02 plan: spec &rarr; plan &rarr; tasks</span><span class="arrow">&rarr;</span>
+      <span class="step">03 build: worktrees, jj</span><span class="arrow">&rarr;</span>
+      <span class="step hot">04 package: stacked PRs</span><span class="arrow">&rarr;</span>
+      <span class="step">05 verify: AI review, then human</span><span class="arrow">&rarr;</span>
+      <span class="step">06 land: merge queue</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>04 <b>Diagram</b></h2>
+    <svg viewBox="0 0 700 240" role="img" aria-label="Six loop stages in a row, each with the concepts that belong to it; the loop arrow returns from land to context.">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+
+      <rect class="box" x="10" y="30" width="104" height="44" rx="8"/>
+      <text x="62" y="56" text-anchor="middle">01 Context</text>
+      <path class="line" d="M114 52 H126" marker-end="url(#a)"/>
+      <rect class="box" x="126" y="30" width="104" height="44" rx="8"/>
+      <text x="178" y="56" text-anchor="middle">02 Plan</text>
+      <path class="line" d="M230 52 H242" marker-end="url(#a)"/>
+      <rect class="box" x="242" y="30" width="104" height="44" rx="8"/>
+      <text x="294" y="56" text-anchor="middle">03 Build</text>
+      <path class="line" d="M346 52 H358" marker-end="url(#a)"/>
+      <rect class="hot" x="358" y="30" width="104" height="44" rx="8"/>
+      <text x="410" y="56" text-anchor="middle">04 Package</text>
+      <path class="line" d="M462 52 H474" marker-end="url(#a)"/>
+      <rect class="box" x="474" y="30" width="104" height="44" rx="8"/>
+      <text x="526" y="56" text-anchor="middle">05 Verify</text>
+      <path class="line" d="M578 52 H590" marker-end="url(#a)"/>
+      <rect class="box" x="590" y="30" width="100" height="44" rx="8"/>
+      <text x="640" y="56" text-anchor="middle">06 Land</text>
+
+      <path class="line" d="M640 74 V96 H62 V74" marker-end="url(#a)"/>
+      <text x="350" y="110" text-anchor="middle">next task starts with what landed</text>
+
+      <text x="62" y="140" text-anchor="middle">AGENTS.md</text>
+      <text x="62" y="160" text-anchor="middle">Agent Skills</text>
+      <text x="62" y="180" text-anchor="middle">MCP</text>
+
+      <text x="178" y="140" text-anchor="middle">Spec-driven dev</text>
+      <text x="178" y="160" text-anchor="middle">(Spec Kit)</text>
+
+      <text x="294" y="140" text-anchor="middle">Git worktrees</text>
+      <text x="294" y="160" text-anchor="middle">Jujutsu (jj)</text>
+      <text x="294" y="180" text-anchor="middle">GitButler</text>
+
+      <text x="410" y="140" text-anchor="middle">Stacked PRs</text>
+      <text x="410" y="160" text-anchor="middle">GA on GitHub</text>
+      <text x="410" y="180" text-anchor="middle">2026-10-06</text>
+
+      <text x="526" y="140" text-anchor="middle">AI code review</text>
+      <text x="526" y="160" text-anchor="middle">then human review</text>
+
+      <text x="640" y="140" text-anchor="middle">Merge queue</text>
+      <text x="640" y="160" text-anchor="middle">lands a stack</text>
+      <text x="640" y="180" text-anchor="middle">as one group</text>
+
+      <text x="350" y="225" text-anchor="middle">Highlighted: small stacks are what make AI review and the merge queue cheap.</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2>05 <b>When to use it</b></h2>
+    <table>
+      <tr><th>Week</th><th>Learn</th><th>Use it when</th><th>Skip it when</th></tr>
+      <tr><td>1</td><td>Worktrees + a short AGENTS.md</td><td>Several agents on one repo; instructions repeat across sessions</td><td>Solo repo, one change in flight; the code already says it</td></tr>
+      <tr><td>2</td><td>Stacked PRs + merge queue</td><td>PRs are large and reviewers are the queue</td><td>Changes are already small and land cleanly</td></tr>
+      <tr><td>3</td><td>Skills + MCP</td><td>A prompt is repeated; an agent needs live data or tools</td><td>A file in the repo answers the question</td></tr>
+      <tr><td>4</td><td>Spec-driven on one feature</td><td>A feature is big enough to need a plan</td><td>A quick experiment or spike</td></tr>
+      <tr><td>5</td><td>AI review bake-off; jj optional</td><td>You have past bugs to test a reviewer on</td><td>You already use GitButler; learn jj's ideas, not the tool</td></tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jujutsu vs Git</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .arrow { color: var(--muted-foreground); }
+  svg { display: block; width: 100%; height: 240px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section>
+    <h2>01 <b>What it is</b></h2>
+    <p>Jujutsu (<code>jj</code>) is a Git-compatible version control system that uses a Git repository as its storage layer. Your teammates and GitHub see ordinary commits; what changes is the local model: the working copy is a commit, commits have a stable change ID, descendants rebase automatically, conflicts are stored instead of stopping you, and every operation can be undone. The README calls it experimental, with on-disk format changes still possible before 1.0.</p>
+  </section>
+
+  <section>
+    <h2>02 <b>Git's model vs jj's</b></h2>
+    <div class="grid">
+      <div class="card"><h3>Git: four places for code</h3><p>Working dir &rarr; <code>git add</code> &rarr; index &rarr; <code>git commit</code> &rarr; commit, plus <code>git stash</code>. Switching tasks mid-edit means a stash or a throwaway WIP commit.</p></div>
+      <div class="card hot"><h3>jj: one place, commits</h3><p>Your edits live in the working-copy commit <code>@</code>. Most <code>jj</code> commands snapshot it automatically; new files are tracked implicitly, <code>.gitignore</code> is honoured. Switching tasks is <code>jj new</code>; nothing to stash.</p></div>
+      <div class="card"><h3>Git: the hash is the name</h3><p>Amend "Add login" and <code>a1b2c3</code> becomes <code>9f8e7d</code>. Anything that pointed at the old hash is stale.</p></div>
+      <div class="card hot"><h3>jj: change ID + commit ID</h3><p>The change ID (e.g. <code>kxqp</code>) "stays the same when the commit is rewritten". The Git commit ID still changes underneath.</p></div>
+      <div class="card"><h3>Git: a conflict halts the rebase</h3><p>Repo sits in "rebase in progress" until you resolve or <code>--abort</code>. Other branches built on the edited commit are rebased by hand.</p></div>
+      <div class="card hot"><h3>jj: conflicts are data in the commit</h3><p>A conflicted rebase "will succeed"; the conflict is recorded in the commit and can be resolved later. Descendants of a rewritten commit are rebased automatically.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>Fixing a bug in the bottom of a stack A &rarr; B &rarr; C</b></h2>
+    <div class="flow">
+      <span class="step">Git: stash</span><span class="arrow">&rarr;</span>
+      <span class="step">rebase -i, mark A edit</span><span class="arrow">&rarr;</span>
+      <span class="step">fix, add, commit --amend</span><span class="arrow">&rarr;</span>
+      <span class="step">rebase --continue</span><span class="arrow">&rarr;</span>
+      <span class="step">resolve conflicts now or abort</span><span class="arrow">&rarr;</span>
+      <span class="step">stash pop</span>
+    </div>
+    <div class="flow">
+      <span class="step hot">jj edit A</span><span class="arrow">&rarr;</span>
+      <span class="step hot">fix the file</span><span class="arrow">&rarr;</span>
+      <span class="step hot">B and C rebased for you</span><span class="arrow">&rarr;</span>
+      <span class="step hot">jj edit C to go back</span>
+    </div>
+    <p class="note">If the fix conflicts in B, the rebase still finishes: B and C carry a conflict marker in the log. Resolve B later with <code>jj new B</code>, fix, <code>jj squash</code>; C is rebased again.</p>
+  </section>
+
+  <section>
+    <h2>04 <b>Diagram: the operation log makes everything undoable</b></h2>
+    <svg viewBox="0 0 700 240" role="img" aria-label="A chain of three jj operations where the last, a wrong rebase, is reversed by jj undo, next to the git reflog which only records where HEAD moved.">
+      <text x="20" y="28" style="font-weight:600">jj op log: every repo-modifying operation stores a snapshot (view)</text>
+      <rect class="box" x="20" y="44" width="170" height="48" rx="8"/>
+      <text x="105" y="66" text-anchor="middle">jj new main</text>
+      <text x="105" y="82" text-anchor="middle" style="fill:var(--muted-foreground)">10:01</text>
+      <path class="line" d="M190 68 H230" marker-end="url(#a)"/>
+      <rect class="box" x="230" y="44" width="190" height="48" rx="8"/>
+      <text x="325" y="66" text-anchor="middle">jj describe -m "Add login"</text>
+      <text x="325" y="82" text-anchor="middle" style="fill:var(--muted-foreground)">10:14</text>
+      <path class="line" d="M420 68 H460" marker-end="url(#a)"/>
+      <rect class="hot" x="460" y="44" width="220" height="48" rx="8"/>
+      <text x="570" y="66" text-anchor="middle">jj rebase -d wrong-place</text>
+      <text x="570" y="82" text-anchor="middle" style="fill:var(--muted-foreground)">10:20, oops</text>
+      <path class="line" d="M570 92 V130" marker-end="url(#a)"/>
+      <rect class="hot" x="460" y="130" width="220" height="48" rx="8"/>
+      <text x="570" y="152" text-anchor="middle">jj undo</text>
+      <text x="570" y="168" text-anchor="middle" style="fill:var(--muted-foreground)">back to the 10:14 view</text>
+      <text x="20" y="152">jj op restore: whole repo back to any earlier operation</text>
+      <text x="20" y="172">jj --at-op: read the repo as it was then</text>
+      <text x="20" y="214" style="fill:var(--muted-foreground)">Git: reflog records where HEAD and branch tips moved; recovery is a manual reset.</text>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+    </svg>
+  </section>
+
+  <section>
+    <h2>05 <b>Git &rarr; jj cheat sheet, and when to stay on Git</b></h2>
+    <table>
+      <tr><th>You want to</th><th>Git</th><th>jj</th></tr>
+      <tr><td>Start</td><td><code>git clone</code></td><td><code>jj git clone</code>, or <code>jj git init</code> in an existing repo (colocated with <code>.git/</code> by default)</td></tr>
+      <tr><td>See history</td><td><code>git log --graph</code></td><td><code>jj log</code></td></tr>
+      <tr><td>Commit current work</td><td><code>git add . &amp;&amp; git commit -m</code></td><td><code>jj commit -m "..."</code></td></tr>
+      <tr><td>Start something new</td><td><code>git checkout -b x</code></td><td><code>jj new main</code></td></tr>
+      <tr><td>Fix previous commit</td><td><code>git commit --amend</code></td><td><code>jj squash</code> (moves <code>@</code> into its parent)</td></tr>
+      <tr><td>Split a commit</td><td><code>git rebase -i</code> + reset</td><td><code>jj split</code></td></tr>
+      <tr><td>Branch name for a PR</td><td>branch</td><td><code>jj bookmark create x -r @</code> then <code>jj git push --bookmark x</code>, or <code>jj git push -c @</code></td></tr>
+      <tr><td>Oops</td><td><code>git reflog</code> + reset</td><td><code>jj undo</code></td></tr>
+    </table>
+    <table>
+      <tr><th>Use jj when</th><th>Stay on Git when</th></tr>
+      <tr><td>You rewrite history often: stacked PRs, splitting, fixing older commits</td><td>You rely on hooks, submodules, Git LFS, <code>.gitattributes</code>, or partial clones (unsupported)</td></tr>
+      <tr><td>You want safe experimentation via <code>jj undo</code></td><td>You cannot accept pre-1.0 on-disk format changes</td></tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note.</p>
+</div>
+</body>
+</html>

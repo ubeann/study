@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Redesigning source control at Anthropic (Scion)</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .arrow { color: var(--muted-foreground); }
+  svg { display: block; width: 100%; height: 240px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section>
+    <h2>01 <b>What it is</b></h2>
+    <p>Scion is Anthropic's in-house, server-centric source control system, built when Claude-driven merges outgrew git infrastructure sized for humans. It runs the company monorepo in production but is not released: "by no means a suitable replacement for git for general use."</p>
+    <div class="flow">
+      <span class="step">May 2026: ~2,500 merges/day</span><span class="arrow">&rarr;</span>
+      <span class="step hot">Sep 2026: 30,000+ merges/day</span><span class="arrow">&middot;</span>
+      <span class="step">~100 GB history, 25 GB+ working copy</span><span class="arrow">&middot;</span>
+      <span class="step">~25M CI checkouts/day: 600+ PB/day if fetched naively</span><span class="arrow">&middot;</span>
+      <span class="step">several hundred git mirrors at peak</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>02 <b>Git's assumption vs Scion's</b></h2>
+    <div class="grid">
+      <div class="card"><h3>Git: offline, thick clients</h3><p>Every clone holds the full history as packfiles; blame, diff and merge run on the client. The fetch negotiation is "here is what I have", answered with one large packfile computed per client.</p></div>
+      <div class="card hot"><h3>Scion: always online, thin clients</h3><p>Nearly every client is a CI job or agent with a constant connection. The server owns history, blame, commits, merges and rebases; clients keep a bounded cache and an optional, sparse or virtualized working copy. Many jobs (bisect, revert) just call the API with no checkout.</p></div>
+      <div class="card"><h3>Git commit</h3><p>Points to a snapshot of the whole tree. Refs move as part of the commit flow; a merge queue serializes landings behind a global lock.</p></div>
+      <div class="card hot"><h3>Scion changeset</h3><p>An entry in a write-ahead log listing only the files changed relative to the first parent, with content-addressed blob pointers. Cheap, incremental, lock-free; refs discouraged except main and release branches. Derived data (blame, path history, skip lists) is computed recursively from the parents' values.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>How a fetch flows: "here is what I want"</b></h2>
+    <div class="flow">
+      <span class="step">client asks for the root tree</span><span class="arrow">&rarr;</span>
+      <span class="step hot">checks local store for missing subtrees, requests them recursively</span><span class="arrow">&rarr;</span>
+      <span class="step hot">fetches only the blobs it needs</span><span class="arrow">&rarr;</span>
+      <span class="step">small, cacheable, resumable responses</span><span class="arrow">&rarr;</span>
+      <span class="step">skip a subtree = sparse checkout for free</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>04 <b>Diagram: three cache tiers over Spanner</b></h2>
+    <svg viewBox="0 0 700 240" role="img" aria-label="CI jobs and agents on one node talk to a local scion-daemon, which falls through to a regional scion-cache, then to the authoritative scion-server backed by Spanner and cloud storage; each tier reports over 99 percent cache hits.">
+      <rect class="box" x="10" y="40" width="130" height="120" rx="8"/>
+      <text x="75" y="62" text-anchor="middle" style="font-weight:600">one node</text>
+      <text x="75" y="86" text-anchor="middle">CI job</text>
+      <text x="75" y="106" text-anchor="middle">agent</text>
+      <text x="75" y="126" text-anchor="middle">research job</text>
+      <text x="75" y="148" text-anchor="middle" style="fill:var(--muted-foreground)">scn client</text>
+      <path class="line" d="M140 100 H180" marker-end="url(#a)"/>
+      <rect class="hot" x="180" y="70" width="130" height="60" rx="8"/>
+      <text x="245" y="94" text-anchor="middle" style="font-weight:600">scion-daemon</text>
+      <text x="245" y="114" text-anchor="middle">per node</text>
+      <path class="line" d="M310 100 H350" marker-end="url(#a)"/>
+      <text x="330" y="90" text-anchor="middle" style="fill:var(--muted-foreground)">miss</text>
+      <rect class="hot" x="350" y="70" width="130" height="60" rx="8"/>
+      <text x="415" y="94" text-anchor="middle" style="font-weight:600">scion-cache</text>
+      <text x="415" y="114" text-anchor="middle">regional</text>
+      <path class="line" d="M480 100 H520" marker-end="url(#a)"/>
+      <text x="500" y="90" text-anchor="middle" style="fill:var(--muted-foreground)">miss</text>
+      <rect class="hot" x="520" y="60" width="170" height="80" rx="8"/>
+      <text x="605" y="84" text-anchor="middle" style="font-weight:600">scion-server</text>
+      <text x="605" y="104" text-anchor="middle">authoritative</text>
+      <text x="605" y="124" text-anchor="middle">computes derived data</text>
+      <path class="line" d="M605 140 V180" marker-end="url(#a)"/>
+      <rect class="box" x="520" y="180" width="170" height="44" rx="8"/>
+      <text x="605" y="207" text-anchor="middle">Spanner + cloud storage</text>
+      <text x="180" y="190">Each tier caches content-addressed data and talks only to the tier above it,</text>
+      <text x="180" y="208">so one tier's failure cannot overload the ones upstream.</text>
+      <text x="180" y="230" style="font-weight:600">&gt;99% cache hit rate at each tier</text>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+    </svg>
+  </section>
+
+  <section>
+    <h2>05 <b>Results, and what applies to you</b></h2>
+    <table>
+      <tr><th>Result</th><th>Article</th></tr>
+      <tr><td>Migration</td><td>Monorepo off git in five months; a team of seven built Scion and Antique (code review) while merge volume grew 10x</td></tr>
+      <tr><td>Footprint</td><td>200x smaller than the previous git mirroring infrastructure</td></tr>
+      <tr><td>Checkouts</td><td>Seconds instead of minutes for CI and research</td></tr>
+      <tr><td>CI</td><td>25% CPU capacity win</td></tr>
+      <tr><td>Landing code</td><td>No global merge-queue lock; post-merge and pre-deploy testing instead</td></tr>
+      <tr><td>Prior art</td><td>Google Piper, Meta Sapling; Sapling's server Mononoke pioneered many of Scion's techniques</td></tr>
+    </table>
+    <table>
+      <tr><th>Relevant to you when</th><th>Not relevant when</th></tr>
+      <tr><td>You run an enormous monorepo or thousands of always-online agents and can replace review, search and CI too</td><td>You use git at normal scale: Scion is not offered, and its components are "highly bespoke"</td></tr>
+      <tr><td>You build or run a git forge: the wishlist is server-side RPCs, new server architectures, a different negotiation protocol, composable sparse and shallow features</td><td>You want something installable: look at the open-source Sapling instead</td></tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note.</p>
+</div>
+</body>
+</html>

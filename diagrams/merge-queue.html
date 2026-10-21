@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Merge queue</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .arrow { color: var(--muted-foreground); }
+  svg { display: block; width: 100%; height: 240px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section>
+    <h2>01 <b>What it is</b></h2>
+    <p>A merge queue is a bot that merges approved pull requests into a busy branch first-in, first-out, after testing each one on top of the latest base branch <em>plus the PRs ahead of it</em>. A PR that passed CI only proved it works against the main it was tested on; the queue tests the main it will actually land on.</p>
+  </section>
+
+  <section>
+    <h2>02 <b>The usual ways vs the queue</b></h2>
+    <div class="grid">
+      <div class="card"><h3>Merge manually, no rule</h3><p>PR A renames <code>getUser()</code> to <code>fetchUser()</code>; PR B adds a caller of <code>getUser()</code>. Both green on the old main. Merge A, merge B: main is broken, and nobody ever ran A + B together.</p></div>
+      <div class="card"><h3>"Require branches to be up to date"</h3><p>Safe, but every merge makes every other open PR stale. Each author clicks "update branch", waits for CI again, and races the next merge. Three PRs with 20-minute CI cost about 70 minutes and a human watching each one.</p></div>
+      <div class="card hot"><h3>Merge queue</h3><p>Click "queue" and walk away. The bot builds temporary branches, runs CI on the exact future main, merges what passes, and drops what fails without blocking anyone else. GitHub: same benefits as the up-to-date rule, without the author updating the branch.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>How it flows (GitHub)</b></h2>
+    <div class="flow">
+      <span class="step">PR passes branch checks</span><span class="arrow">&rarr;</span>
+      <span class="step">added to queue</span><span class="arrow">&rarr;</span>
+      <span class="step hot">temp branch: latest main + PRs ahead + this PR</span><span class="arrow">&rarr;</span>
+      <span class="step hot"><code>merge_group</code> webhook, CI runs</span><span class="arrow">&rarr;</span>
+      <span class="step">required checks pass: merged</span><span class="arrow">&rarr;</span>
+      <span class="step">fail or timeout: removed, rest rebuilt</span>
+    </div>
+    <p class="note">Workflows must add <code>on: merge_group</code> next to <code>pull_request</code>; without it the required check is never reported and the merge fails. Knobs: build concurrency 1 to 100, min/max PRs per merge 1 to 100 plus a wait time, status-check timeout.</p>
+  </section>
+
+  <section>
+    <h2>04 <b>Diagram: speculative checks, one PR kicked out</b></h2>
+    <svg viewBox="0 0 700 240" role="img" aria-label="Three queued PRs are tested in parallel on stacked temporary branches; main plus A passes, main plus A plus B fails, the third run is cancelled and re-run as main plus A plus C, which passes.">
+      <rect class="hot" x="10" y="20" width="110" height="200" rx="8"/>
+      <text x="65" y="42" text-anchor="middle" style="font-weight:600">Queue</text>
+      <rect class="box" x="22" y="56" width="86" height="32" rx="6"/><text x="65" y="77" text-anchor="middle">1 &middot; PR A</text>
+      <rect class="box" x="22" y="104" width="86" height="32" rx="6"/><text x="65" y="125" text-anchor="middle">2 &middot; PR B</text>
+      <rect class="box" x="22" y="152" width="86" height="32" rx="6"/><text x="65" y="173" text-anchor="middle">3 &middot; PR C</text>
+      <path class="line" d="M120 72 H160" marker-end="url(#a)"/>
+      <path class="line" d="M120 120 H160" marker-end="url(#a)"/>
+      <path class="line" d="M120 168 H160" marker-end="url(#a)"/>
+      <rect class="box" x="160" y="56" width="270" height="32" rx="6"/>
+      <text x="172" y="77">main + A</text><text x="418" y="77" text-anchor="end" style="font-weight:600">pass</text>
+      <rect class="box" x="160" y="104" width="270" height="32" rx="6" style="stroke:var(--accent)"/>
+      <text x="172" y="125">main + A + B</text><text x="418" y="125" text-anchor="end" style="font-weight:600">FAIL</text>
+      <rect class="box" x="160" y="152" width="270" height="32" rx="6" style="stroke-dasharray:4 3"/>
+      <text x="172" y="173" style="fill:var(--muted-foreground)">main + A + B + C</text><text x="418" y="173" text-anchor="end" style="fill:var(--muted-foreground)">cancelled</text>
+      <path class="line" d="M295 184 V196" style="stroke-dasharray:4 3"/>
+      <rect class="hot" x="160" y="196" width="270" height="32" rx="6"/>
+      <text x="172" y="217">re-test: main + A + C</text><text x="418" y="217" text-anchor="end" style="font-weight:600">pass</text>
+      <path class="line" d="M430 72 H470" marker-end="url(#a)"/>
+      <path class="line" d="M430 120 H470" marker-end="url(#a)"/>
+      <path class="line" d="M430 212 H470" marker-end="url(#a)"/>
+      <text x="480" y="68" style="font-weight:600">A merged</text><text x="480" y="84" style="fill:var(--muted-foreground)">main still green</text>
+      <text x="480" y="116" style="font-weight:600">B removed from queue</text><text x="480" y="132" style="fill:var(--muted-foreground)">author notified, nobody blocked</text>
+      <text x="480" y="208" style="font-weight:600">C merged</text><text x="480" y="224" style="fill:var(--muted-foreground)">tested on the real future main</text>
+      <text x="160" y="42" style="fill:var(--muted-foreground)">temporary branches, CI in parallel (GitHub build concurrency; Mergify max_parallel_checks)</text>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+    </svg>
+  </section>
+
+  <section>
+    <h2>05 <b>For many parallel agents: tier the CI, then add lanes</b></h2>
+    <table>
+      <tr><th>Tier</th><th>Trigger</th><th>Run here</th><th>Cost</th></tr>
+      <tr><td>PR checks</td><td><code>pull_request</code>, every push</td><td>lint, format, typecheck, unit tests on affected packages, preview deploy, review bots</td><td>fast, runs many times</td></tr>
+      <tr><td>Queue checks</td><td><code>merge_group</code>, once per group</td><td>full build, integration / e2e, migrations on a real DB; keep typecheck here too</td><td>slow, runs about once, shared by a batch</td></tr>
+      <tr><td>After merge</td><td><code>push</code> to main</td><td>release build, deploy; no re-test, the queue tested this exact commit</td><td>once per release</td></tr>
+    </table>
+    <p class="note">A job gated with <code>if: github.event_name == 'merge_group'</code> reports Success when skipped on the PR, so it can stay a required check. Do not gate required jobs with <code>paths:</code> filters: a path-skipped workflow stays Pending and blocks merging.</p>
+    <table>
+      <tr><th>Illustrative CI minutes for one agent PR (5 pushes; lint+unit 3 min, preview 4 min, build+e2e 15 min)</th><th>Minutes</th></tr>
+      <tr><td>No queue, full CI every push + 3 forced rebases (8 runs x 22 min)</td><td>176</td></tr>
+      <tr><td>Queue, CI unchanged (5 x 22 on the PR + 22 in the queue): the queue alone costs more</td><td>132</td></tr>
+      <tr><td>Queue + tiered CI (5 x 7 + 15 once in the queue)</td><td>50</td></tr>
+      <tr><td>Tiered + batch of 4 (5 x 7 + 15 / 4)</td><td>39</td></tr>
+    </table>
+    <div class="flow">
+      <span class="step">one shared queue: a failure resets everything behind it</span><span class="arrow">vs</span>
+      <span class="step hot">scope lanes (Mergify): web, api, docs tested in parallel; a failure in one lane does not block the others; a PR touching two scopes joins both, one CI run</span>
+    </div>
+    <table>
+      <tr><th>Use it when</th><th>Skip it when</th></tr>
+      <tr><td>Many PRs a day on one branch; many agents in a monorepo; slow CI; stacked PRs</td><td>A few PRs a day and fast CI: the up-to-date rule is enough</td></tr>
+      <tr><td>You want "queue and walk away"; CI is already tiered</td><td>CI is not tiered yet: the queue alone adds runs</td></tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note. The minute figures are arithmetic on assumed durations, not measurements.</p>
+</div>
+</body>
+</html>
