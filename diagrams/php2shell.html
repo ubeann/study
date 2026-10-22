@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PHP2Shell: the story of CVE-2026-109618 and CVE-2026-109619</title>
+<style>
+  /* T3 injects its theme as CSS variables on :root. Keep html, body and .page transparent. */
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground); }
+  .page { display: grid; gap: 28px; width: 100%; }
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+  h2 b { color: var(--foreground); }
+  p { margin: 0; font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: grid; gap: 6px; padding: 16px; background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius, 8px); }
+  .card h3 { margin: 0; font-size: 14px; }
+  .card p { font-size: 13px; color: var(--muted-foreground); }
+  .card.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: var(--accent); }
+  .card.hot p { color: var(--accent-surface-foreground); opacity: .85; }
+  .card.warn { background: var(--warning-surface); border-color: var(--warning); }
+  .card.bad { background: var(--destructive-surface); border-color: var(--destructive); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .step { padding: 8px 12px; font-size: 13px; background: var(--secondary); color: var(--secondary-foreground); border-radius: var(--radius, 8px); }
+  .step.hot { background: var(--accent-surface); color: var(--accent-surface-foreground); }
+  .step.bad { background: var(--destructive-surface); color: var(--foreground); }
+  .arrow { color: var(--muted-foreground); }
+  .lane { font-size: 12px; color: var(--muted-foreground); width: 100%; margin-top: 4px; }
+  svg { display: block; width: 100%; height: 420px; }
+  svg text { fill: var(--foreground); font: 12px var(--font-sans, system-ui, sans-serif); }
+  svg .small { font-size: 11px; fill: var(--muted-foreground); }
+  svg .box { fill: var(--card); stroke: var(--border); }
+  svg .hot { fill: var(--accent-surface); stroke: var(--accent); }
+  svg .bad { fill: var(--destructive-surface); stroke: var(--destructive); }
+  svg .warn { fill: var(--warning-surface); stroke: var(--warning); }
+  svg .line { fill: none; stroke: var(--muted-foreground); stroke-width: 1.5; }
+  svg .axis { stroke: var(--border); stroke-width: 2; }
+  svg .tick { stroke: var(--muted-foreground); stroke-width: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted-foreground); }
+  code { font-family: var(--font-mono, monospace); font-size: 12px; background: var(--code-background); color: var(--code-foreground); padding: 1px 5px; border-radius: 4px; }
+  .note { font-size: 12px; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <section>
+    <h2>01 <b>What happened</b></h2>
+    <p>PHP2Shell is the name given to two critical PHP engine bugs, CVE-2026-109618 and CVE-2026-109619, that let an unauthenticated web request run code on the server before the application even starts. They affect every PHP release back to 5.4. Fixes shipped in PHP 8.5.12, 8.4.27, 8.3.36 and 8.2.35 on Wednesday 21 October 2026 at 14:00 UTC, one day early, after the embargo leaked.</p>
+  </section>
+
+  <section>
+    <h2>02 <b>How it was found</b></h2>
+    <div class="grid">
+      <div class="card"><h3>2004 to 2024: the long shadow</h3><p>Stefan Esser showed in 2004 that PHP's memory-limit handling could be attacked remotely. In 2020 bug #78876 reported multipart out-of-memory side effects. A 2024 OSTIF and Quarkslab audit found a related OOM issue, but with no proof of exploitability the PHP team could not agree on a fix. It stalled for months.</p></div>
+      <div class="card hot"><h3>August 2026: two teams, AI-assisted</h3><p>Calif (Ryan Austin), invited into OpenAI's "Patch the Planet", used LLM "audit buddy" agents primed with PHP's old bug history and surfaced the first OOM fatal on 1 Aug, reported it 11 Aug, and sent a working RCE 14 Aug. Wiz independently found overlapping bugs on 19 Aug using Wiz Atlas, Gemini 4 Argon and GPT-5.6 Sol, and reported on 24 Aug.</p></div>
+      <div class="card"><h3>Sept to Oct: coordinated fix</h3><p>PHP acknowledged the reports on 21 Sept and began a fix with four core developers. Distributions and LTS vendors received the patch under embargo. Release was set for Thursday 22 October 2026 at 14:00 UTC.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 <b>Mechanics of the exploit</b></h2>
+    <p>Both bugs share one root: PHP handles a fatal out-of-memory error with <code>longjmp()</code>, which abandons whatever it was doing mid-step. Whatever half-built or already-freed state is left behind then gets trusted by later code.</p>
+    <div class="flow">
+      <span class="lane">CVE-2026-109618, "RCE via OOM corruption". Strongest on Apache mod_php.</span>
+      <span class="step">chunked or HTTP/2 multipart POST dodges the <code>post_max_size</code> check (it tests declared Content-Length, not bytes read)</span><span class="arrow">&rarr;</span>
+      <span class="step">hundreds of file parts with <code>filename=""</code> and deeply nested names inflate <code>$_FILES</code> past the 128 MiB <code>memory_limit</code></span><span class="arrow">&rarr;</span>
+      <span class="step hot">an allocation fails inside the hash-table insert after the counters were bumped but before the key was stored</span><span class="arrow">&rarr;</span>
+      <span class="step">mod_php still runs request shutdown, which frees the "live" bucket holding stale bytes</span><span class="arrow">&rarr;</span>
+      <span class="step bad">controlled free leads to code execution as the web worker</span>
+    </div>
+    <div class="flow">
+      <span class="lane">CVE-2026-109619, "RCE via stale global state". Works on mod_php and PHP-FPM, needs two requests to the same worker.</span>
+      <span class="step">producer request: a multipart body with <code>PHP_SESSION_UPLOAD_PROGRESS</code> triggers session upload-progress decoding</span><span class="arrow">&rarr;</span>
+      <span class="step hot">OOM fatal during input processing frees the request heap but leaves <code>PS(id)</code> and unserializer bookkeeping pointing at it</span><span class="arrow">&rarr;</span>
+      <span class="step">consumer request on the same worker: cleanup or an early INI diagnostic reads the dangling state before init resets it</span><span class="arrow">&rarr;</span>
+      <span class="step bad">heap use-after-free; either RCE or process memory leaked into a <code>PHPSESSID</code> cookie</span>
+    </div>
+    <p class="note">The patch replaces the <code>longjmp()</code> path with a "soft OOM" raised at the next VM safe point and a hard <code>_exit()</code> above a higher threshold, so nothing is abandoned half-done. On PHP 8.5, <code>fatal_error_backtraces</code> gave a third confirmed producer.</p>
+  </section>
+
+  <section>
+    <h2>04 <b>Timeline and decisions</b></h2>
+    <svg viewBox="0 0 700 420" role="img" aria-label="Timeline from 17 October to 22 October 2026 showing the pre-disclosure honeypot hit, the leak, the early release decision, the patch at 14:00 UTC and the government shutdowns.">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted-foreground)"/></marker></defs>
+      <!-- axis -->
+      <line class="axis" x1="30" y1="210" x2="690" y2="210"/>
+      <text class="small" x="30" y="232">Fri 17 Oct</text>
+      <text class="small" x="200" y="232">Tue 20 Oct</text>
+      <text class="small" x="430" y="232">Wed 21 Oct</text>
+      <text class="small" x="640" y="232">Thu 22 Oct</text>
+      <text class="small" x="590" y="248" text-anchor="middle">(original release date)</text>
+
+      <!-- 17 Oct: Amazon MadPot -->
+      <line class="tick" x1="50" y1="210" x2="50" y2="150"/>
+      <rect class="bad" x="20" y="100" width="130" height="50" rx="8"/>
+      <text x="85" y="120" text-anchor="middle">Honeypot hit</text>
+      <text class="small" x="85" y="137" text-anchor="middle">Amazon MadPot, pre-leak</text>
+
+      <!-- 20 Oct 15:00 leak -->
+      <line class="tick" x1="215" y1="210" x2="215" y2="270"/>
+      <rect class="warn" x="160" y="270" width="130" height="50" rx="8"/>
+      <text x="225" y="290" text-anchor="middle">~15:00 CVE IDs leak</text>
+      <text class="small" x="225" y="307" text-anchor="middle">HN post, X, wrong 10.0 score</text>
+
+      <!-- 20 Oct 19:30 pre-announce -->
+      <line class="tick" x1="260" y1="210" x2="260" y2="150"/>
+      <rect class="hot" x="200" y="100" width="150" height="50" rx="8"/>
+      <text x="275" y="120" text-anchor="middle">19:30 PHP pre-announces</text>
+      <text class="small" x="275" y="137" text-anchor="middle">release pulled in by one day</text>
+
+      <!-- 20 Oct 20:00 Calif video -->
+      <line class="tick" x1="300" y1="210" x2="300" y2="330"/>
+      <rect class="warn" x="240" y="330" width="130" height="50" rx="8"/>
+      <text x="305" y="350" text-anchor="middle">~20:00 PoC video</text>
+      <text class="small" x="305" y="367" text-anchor="middle">posted by mistake, pulled</text>
+
+      <!-- 21 Oct 02:00 PoCs / 07:41 Chainguard -->
+      <line class="tick" x1="400" y1="210" x2="400" y2="270"/>
+      <rect class="bad" x="340" y="270" width="150" height="50" rx="8"/>
+      <text x="415" y="290" text-anchor="middle">02:00 PoCs, 07:41 Chainguard</text>
+      <text class="small" x="415" y="307" text-anchor="middle">fixed images out 6 h early</text>
+
+      <!-- 21 Oct 14:00 release -->
+      <line class="tick" x1="470" y1="210" x2="470" y2="90"/>
+      <rect class="hot" x="400" y="40" width="150" height="50" rx="8"/>
+      <text x="475" y="60" text-anchor="middle">14:00 UTC patches ship</text>
+      <text class="small" x="475" y="77" text-anchor="middle">8.5.12 8.4.27 8.3.36 8.2.35</text>
+
+      <!-- 21 Oct gov offline -->
+      <line class="tick" x1="520" y1="210" x2="520" y2="330"/>
+      <rect class="box" x="450" y="330" width="190" height="66" rx="8"/>
+      <text x="545" y="350" text-anchor="middle">Sites go dark</text>
+      <text class="small" x="545" y="366" text-anchor="middle">NL, FI, FR, DK, DE agencies,</text>
+      <text class="small" x="545" y="381" text-anchor="middle">Wikimedia, Internet Archive</text>
+
+      <!-- 21 Oct 20:30 details -->
+      <line class="tick" x1="600" y1="210" x2="600" y2="150"/>
+      <rect class="box" x="560" y="100" width="130" height="50" rx="8"/>
+      <text x="625" y="120" text-anchor="middle">~20:30 writeups</text>
+      <text class="small" x="625" y="137" text-anchor="middle">Wiz, Calif publish details</text>
+    </svg>
+    <div class="grid">
+      <div class="card hot"><h3>PHP maintainers</h3><p>Leak at 15:00, pre-announce at 19:30, ship 24 h early rather than immediately: distributors were still packaging, and an instant release would have left most users without an update path. Source-only backports for 7.4, 8.0, 8.1. Publish mitigations but say plainly none makes you safe.</p></div>
+      <div class="card"><h3>Governments and CERTs</h3><p>UK NCSC and US NSA: update now, or take the system offline until fixed, and check for backdoors first. CERT-EU: isolate internet-facing hosts until patched. Netherlands, Finland, France, Denmark and Germany pulled agency sites. Japan advised immediate updates.</p></div>
+      <div class="card"><h3>Businesses and hosts</h3><p>Cloudflare shipped WAF rules nine hours before disclosure and saw attacks on both CVEs. Wikimedia, Internet Archive, 4chan and Japanese hosts took downtime. Everyone else: inventory PHP (including appliances), patch internet-facing first, block multipart or disable upload progress meanwhile.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>05 <b>Post-mortem</b></h2>
+    <table>
+      <tr><th>What went wrong</th><th>What went right</th><th>What changes</th></tr>
+      <tr>
+        <td>The OOM bug was known since 2024 and never fixed; the Foundation calls that "a structural failure" of decision process and resources.</td>
+        <td>Two independent teams found it, reported privately, and worked with PHP, OpenAI, CDNs and hosts for two months before release.</td>
+        <td>Security team decides by majority; Foundation leadership can step in to force a timely resolution.</td>
+      </tr>
+      <tr>
+        <td>Embargo leaked two days out via a forum post; a PoC video slipped; mitigation advice to critical infrastructure "may have leaked"; Chainguard published the fix six hours early.</td>
+        <td>Pre-announcement gave admins a night to prepare; distros already had packages at 14:00 UTC.</td>
+        <td>Turn the last weeks into "lasting repeatable processes"; new Ecosystem Security Team (May 2026) with dedicated triage and hardening hires.</td>
+      </tr>
+      <tr>
+        <td>Exploitation attempts hit a honeypot on 17 October, before any leak. Nobody knows how that actor had details.</td>
+        <td>No functional public exploit existed at release time; early attempts on sensors were unsuccessful on day one.</td>
+        <td>Sanitizer builds, reproduction environments matching CI, and AI validation of reports (OpenAI Daybreak Red).</td>
+      </tr>
+      <tr>
+        <td>About 70% of websites run PHP, often on EOL versions bundled in appliances, cPanel or Plesk, with no vendor to backport.</td>
+        <td>Governments treated it like a real emergency and accepted downtime over compromise.</td>
+        <td>Foundation asks companies, hosts and governments to fund PHP "at a level that reflects how much you rely on it".</td>
+      </tr>
+    </table>
+  </section>
+
+  <p class="note">Sources are listed in the note.</p>
+</div>
+</body>
+</html>
